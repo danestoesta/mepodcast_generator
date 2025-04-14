@@ -55,6 +55,11 @@ interface PodcastFormProps {
   selectedEpisodeName?: string | null;
 }
 
+// Helper function to check if a script link is valid - MOVED UP before it's used
+const isValidScriptLink = (link: string | null): boolean => {
+  return link !== null && link !== undefined && link.trim() !== '';
+};
+
 export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: PodcastFormProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,14 +85,45 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   // Store the timestamp when the form was submitted
   const submissionTimestamp = useRef<number | null>(null);
   
+  // Store the current episode name for notifications
+  const currentEpisodeName = useRef<string | null>(null);
+  
+  // Store the current episode ID for checking script4 value
+  const currentEpisodeId = useRef<string | null>(null);
+  
+  // Interval for checking script4 value
+  const script4CheckIntervalRef = useRef<number | null>(null);
+  
+  // Interval for refreshing episodes list
+  const refreshIntervalRef = useRef<number | null>(null);
+  
+  // Track if we've already found a matching record
+  const foundMatchingRecord = useRef<boolean>(false);
+  
+  // Store the last check time to avoid checking too frequently
+  const lastCheckTime = useRef<number>(0);
+  
+  // Maximum time to wait for a response (in milliseconds) - 2 minutes
+  const MAX_WAIT_TIME = 2 * 60 * 1000;
+  
+  // Timeout reference for the maximum wait time
+  const maxWaitTimeoutRef = useRef<number | null>(null);
+  
+  // Flag to track if we're checking for existing records
+  const isCheckingExistingRecords = useRef<boolean>(false);
+  
   const {
     register,
     handleSubmit,
     formState: { errors },
     setValue,
     reset,
+    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
+    defaultValues: {
+      episodeName: "",
+    }
   });
 
   const scriptTypes: ScriptType[] = [
@@ -96,6 +132,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     { id: 3, name: "Script #3 - Practical Application", responseKey: "episode_interview_script_3" },
     { id: 4, name: "Script #4 - Summary", responseKey: "episode_interview_script_4" }
   ];
+
+  // Check if Script #4 has a valid link
+  const hasScript4 = isValidScriptLink(scriptLinks.episode_interview_script_4);
 
   // Update form when selectedScriptLinks changes
   useEffect(() => {
@@ -122,77 +161,336 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       setIsScriptGenerated(hasAnyScript);
       
       // If episode name is provided, update the form field
-      if (selectedEpisodeName) {
+      if (selectedEpisodeName && selectedEpisodeName.trim() !== '') {
         setValue("episodeName", selectedEpisodeName);
       }
+    } else {
+      // If no script links are selected, reset the form field
+      setValue("episodeName", "");
+      
+      // Reset script links
+      setScriptLinks({
+        episode_interview_script_1: null,
+        episode_interview_script_2: null,
+        episode_interview_script_3: null,
+        episode_interview_script_4: null
+      });
+      
+      // Reset script status
+      setScriptStatus("Pending");
+      setIsScriptGenerated(false);
     }
   }, [selectedScriptLinks, selectedEpisodeName, setValue]);
 
-  // Set up subscription to listen for new records in the autoworkflow table
+  // Set up automatic refreshing of episodes list every second
   useEffect(() => {
-    // Subscribe to changes in the autoworkflow table
-    const subscription = supabase
-      .channel('autoworkflow-changes')
+    // Start the refresh interval
+    if (refreshIntervalRef.current === null) {
+      refreshIntervalRef.current = window.setInterval(() => {
+        // Dispatch a custom event to trigger refresh in EpisodesList component
+        window.dispatchEvent(new CustomEvent('episodes-list-auto-refresh'));
+      }, 1000); // Refresh every second
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (refreshIntervalRef.current !== null) {
+        window.clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  // Clean up intervals when component unmounts or submission state changes
+  useEffect(() => {
+    if (!isSubmitting) {
+      // Clear the script4 check interval if it exists
+      if (script4CheckIntervalRef.current !== null) {
+        window.clearInterval(script4CheckIntervalRef.current);
+        script4CheckIntervalRef.current = null;
+      }
+      
+      // Clear the max wait timeout if it exists
+      if (maxWaitTimeoutRef.current !== null) {
+        window.clearTimeout(maxWaitTimeoutRef.current);
+        maxWaitTimeoutRef.current = null;
+      }
+      
+      // Reset the foundMatchingRecord flag when submission ends
+      foundMatchingRecord.current = false;
+      
+      // Reset the isCheckingExistingRecords flag
+      isCheckingExistingRecords.current = false;
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (script4CheckIntervalRef.current !== null) {
+        window.clearInterval(script4CheckIntervalRef.current);
+        script4CheckIntervalRef.current = null;
+      }
+      
+      if (maxWaitTimeoutRef.current !== null) {
+        window.clearTimeout(maxWaitTimeoutRef.current);
+        maxWaitTimeoutRef.current = null;
+      }
+    };
+  }, [isSubmitting]);
+
+  // Function to check if a new row has been created for the current episode
+  const checkForNewRow = async () => {
+    if (!currentEpisodeName.current || !isSubmitting || foundMatchingRecord.current || isCheckingExistingRecords.current) return;
+    
+    // Set the checking flag to prevent concurrent checks
+    isCheckingExistingRecords.current = true;
+    
+    // Throttle checks to avoid too many requests
+    const now = Date.now();
+    if (now - lastCheckTime.current < 500) {
+      isCheckingExistingRecords.current = false;
+      return; // Check at most every 500ms
+    }
+    lastCheckTime.current = now;
+    
+    try {
+      console.log(`Checking for new row with episode name: ${currentEpisodeName.current}`);
+      
+      // Query the database for records with the current episode name
+      const { data, error } = await supabase
+        .from('autoworkflow')
+        .select('id, created_at, episode_interview_file_name, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .eq('episode_interview_file_name', currentEpisodeName.current);
+      
+      if (error) {
+        console.error('Error checking for new row:', error);
+        isCheckingExistingRecords.current = false;
+        return;
+      }
+      
+      // If we found matching records
+      if (data && data.length > 0) {
+        console.log('Found matching records:', data);
+        
+        // Sort by created_at to get the most recent record
+        const sortedRecords = [...data].sort((a, b) => {
+          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return dateB - dateA; // Sort in descending order (newest first)
+        });
+        
+        const mostRecentRecord = sortedRecords[0];
+        
+        // Check if this record was created after our form submission
+        if (mostRecentRecord.created_at && submissionTimestamp.current) {
+          const recordTimestamp = new Date(mostRecentRecord.created_at).getTime();
+          
+          // If the record was created after our form submission OR if it has script links, consider it a match
+          if (recordTimestamp > submissionTimestamp.current || 
+              mostRecentRecord.episode_interview_script_1 || 
+              mostRecentRecord.episode_interview_script_2 || 
+              mostRecentRecord.episode_interview_script_3 || 
+              mostRecentRecord.episode_interview_script_4) {
+            
+            console.log('Found new record created after form submission:', mostRecentRecord);
+            
+            // Mark that we've found a matching record to prevent further checks
+            foundMatchingRecord.current = true;
+            
+            // Store the record ID
+            currentEpisodeId.current = mostRecentRecord.id;
+            
+            // Update all script links
+            setScriptLinks({
+              episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
+              episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
+              episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
+              episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+            });
+            
+            // Stop the loading state
+            setIsSubmitting(false);
+            
+            // Clear the script4 check interval
+            if (script4CheckIntervalRef.current !== null) {
+              window.clearInterval(script4CheckIntervalRef.current);
+              script4CheckIntervalRef.current = null;
+            }
+            
+            // Clear the max wait timeout
+            if (maxWaitTimeoutRef.current !== null) {
+              window.clearTimeout(maxWaitTimeoutRef.current);
+              maxWaitTimeoutRef.current = null;
+            }
+            
+            // Set script generated flag
+            setIsScriptGenerated(true);
+            
+            // Update script status if available
+            if (mostRecentRecord.episode_interview_script_status) {
+              setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+            }
+            
+            // Show notification
+            toast({
+              title: "Success!",
+              description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+              variant: "default",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error in checkForNewRow:', err);
+    } finally {
+      // Reset the checking flag
+      isCheckingExistingRecords.current = false;
+    }
+  };
+
+  // Set up subscription to listen for changes in the autoworkflow table
+  useEffect(() => {
+    // Subscribe to INSERT events
+    const insertSubscription = supabase
+      .channel('autoworkflow-inserts')
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'autoworkflow' 
       }, (payload) => {
-        console.log('New record created:', payload);
+        console.log('New record created in Supabase:', payload);
         
-        // Check if we're currently submitting and have a submission timestamp
-        if (isSubmitting && submissionTimestamp.current) {
-          const newRecordTime = new Date(payload.commit_timestamp).getTime();
-          const submissionTime = submissionTimestamp.current;
+        // Only process if we're currently submitting and have an episode name
+        if (isSubmitting && currentEpisodeName.current && !foundMatchingRecord.current) {
+          const newRecord = payload.new as any;
           
-          // If the new record was created after our submission (with a small buffer for timing differences)
-          if (newRecordTime >= submissionTime - 5000) { // 5 second buffer
-            console.log('New record detected after form submission, stopping loading state');
+          // Check if this is the record for our current episode
+          if (newRecord.episode_interview_file_name === currentEpisodeName.current) {
+            console.log('New record matches our current episode');
+            
+            // Mark that we've found a matching record
+            foundMatchingRecord.current = true;
+            
+            // Update script links
+            setScriptLinks({
+              episode_interview_script_1: newRecord.episode_interview_script_1 || null,
+              episode_interview_script_2: newRecord.episode_interview_script_2 || null,
+              episode_interview_script_3: newRecord.episode_interview_script_3 || null,
+              episode_interview_script_4: newRecord.episode_interview_script_4 || null
+            });
+            
+            setIsScriptGenerated(true);
+            
+            // Update script status if available
+            if (newRecord.episode_interview_script_status) {
+              setScriptStatus(newRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+            }
             
             // Stop the loading state
             setIsSubmitting(false);
             
-            // Check if the new record has any script links
-            const newRecord = payload.new as any;
-            if (newRecord) {
-              const updatedLinks = { ...scriptLinks };
-              let foundLinks = false;
-              
-              // Check for each script key
-              scriptTypes.forEach(script => {
-                const key = script.responseKey;
-                if (newRecord[key] && typeof newRecord[key] === 'string' && newRecord[key].trim() !== '') {
-                  updatedLinks[key] = newRecord[key];
-                  foundLinks = true;
-                }
-              });
-              
-              if (foundLinks) {
-                setScriptLinks(updatedLinks);
-                setIsScriptGenerated(true);
-                
-                // Update script status if available
-                if (newRecord.episode_interview_script_status) {
-                  setScriptStatus(newRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
-                }
-                
-                toast({
-                  title: "Success!",
-                  description: "Your podcast scripts have been generated.",
-                  variant: "default",
-                });
-              }
+            // Clear the script4 check interval
+            if (script4CheckIntervalRef.current !== null) {
+              window.clearInterval(script4CheckIntervalRef.current);
+              script4CheckIntervalRef.current = null;
             }
+            
+            // Clear the max wait timeout
+            if (maxWaitTimeoutRef.current !== null) {
+              window.clearTimeout(maxWaitTimeoutRef.current);
+              maxWaitTimeoutRef.current = null;
+            }
+            
+            // Show notification
+            toast({
+              title: "Success!",
+              description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+              variant: "default",
+            });
           }
         }
       })
       .subscribe();
 
-    // Cleanup subscription on unmount
+    // Subscribe to UPDATE events
+    const updateSubscription = supabase
+      .channel('autoworkflow-updates')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'autoworkflow' 
+      }, (payload) => {
+        console.log('Record updated in Supabase:', payload);
+        
+        // Only process if we're currently submitting and have an episode name
+        if (isSubmitting && currentEpisodeName.current && !foundMatchingRecord.current) {
+          const updatedRecord = payload.new as any;
+          
+          // Check if this is the record for our current episode
+          if (updatedRecord.episode_interview_file_name === currentEpisodeName.current) {
+            console.log('Updated record matches our current episode');
+            
+            // Mark that we've found a matching record
+            foundMatchingRecord.current = true;
+            
+            // Update script links
+            setScriptLinks({
+              episode_interview_script_1: updatedRecord.episode_interview_script_1 || null,
+              episode_interview_script_2: updatedRecord.episode_interview_script_2 || null,
+              episode_interview_script_3: updatedRecord.episode_interview_script_3 || null,
+              episode_interview_script_4: updatedRecord.episode_interview_script_4 || null
+            });
+            
+            setIsScriptGenerated(true);
+            
+            // Update script status if available
+            if (updatedRecord.episode_interview_script_status) {
+              setScriptStatus(updatedRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+            }
+            
+            // Stop the loading state
+            setIsSubmitting(false);
+            
+            // Clear the script4 check interval
+            if (script4CheckIntervalRef.current !== null) {
+              window.clearInterval(script4CheckIntervalRef.current);
+              script4CheckIntervalRef.current = null;
+            }
+            
+            // Clear the max wait timeout
+            if (maxWaitTimeoutRef.current !== null) {
+              window.clearTimeout(maxWaitTimeoutRef.current);
+              maxWaitTimeoutRef.current = null;
+            }
+            
+            // Show notification
+            toast({
+              title: "Success!",
+              description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+              variant: "default",
+            });
+          }
+        }
+      })
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
     return () => {
-      subscription.unsubscribe();
+      insertSubscription.unsubscribe();
+      updateSubscription.unsubscribe();
+      
+      // Clear the script4 check interval if it exists
+      if (script4CheckIntervalRef.current !== null) {
+        window.clearInterval(script4CheckIntervalRef.current);
+        script4CheckIntervalRef.current = null;
+      }
+      
+      // Clear the max wait timeout if it exists
+      if (maxWaitTimeoutRef.current !== null) {
+        window.clearTimeout(maxWaitTimeoutRef.current);
+        maxWaitTimeoutRef.current = null;
+      }
     };
-  }, [isSubmitting, scriptLinks, scriptTypes, toast]);
+  }, [isSubmitting, toast]);
 
   // Process webhook response
   const processWebhookResponse = (data: any) => {
@@ -203,21 +501,19 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       if (Array.isArray(data) && data.length > 0) {
         const item = data[0];
         
-        // Extract script links
-        const updatedLinks = { ...scriptLinks };
-        let foundLinks = false;
-        
-        // Check for each script key
-        scriptTypes.forEach(script => {
-          const key = script.responseKey;
-          if (item[key] && typeof item[key] === 'string' && item[key].trim() !== '') {
-            updatedLinks[key] = item[key];
-            foundLinks = true;
-          }
-        });
-        
-        if (foundLinks) {
-          setScriptLinks(updatedLinks);
+        // Check if this is for our current episode
+        if (item.episode_interview_file_name === currentEpisodeName.current) {
+          // Mark that we've found a matching record
+          foundMatchingRecord.current = true;
+          
+          // Update script links
+          setScriptLinks({
+            episode_interview_script_1: item.episode_interview_script_1 || null,
+            episode_interview_script_2: item.episode_interview_script_2 || null,
+            episode_interview_script_3: item.episode_interview_script_3 || null,
+            episode_interview_script_4: item.episode_interview_script_4 || null
+          });
+          
           setIsScriptGenerated(true);
           
           // Update script status if available
@@ -225,9 +521,25 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             setScriptStatus(item.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
           }
           
+          // Stop the loading state
+          setIsSubmitting(false);
+          
+          // Clear the script4 check interval
+          if (script4CheckIntervalRef.current !== null) {
+            window.clearInterval(script4CheckIntervalRef.current);
+            script4CheckIntervalRef.current = null;
+          }
+          
+          // Clear the max wait timeout
+          if (maxWaitTimeoutRef.current !== null) {
+            window.clearTimeout(maxWaitTimeoutRef.current);
+            maxWaitTimeoutRef.current = null;
+          }
+          
+          // Show notification
           toast({
             title: "Success!",
-            description: "Your podcast scripts have been generated.",
+            description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
             variant: "default",
           });
           
@@ -245,6 +557,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   const onSubmit = async (data: FormValues) => {
     console.log("Form submitted");
     lastSubmittedData.current = data;
+    
+    // Store the current episode name for notifications
+    currentEpisodeName.current = data.episodeName;
+    
+    // Reset the foundMatchingRecord flag
+    foundMatchingRecord.current = false;
+    
+    // Set loading state
+    setIsSubmitting(true);
     
     // Show processing toast
     toast({
@@ -277,59 +598,172 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     submissionTimestamp.current = Date.now();
     console.log(`Setting submission timestamp: ${submissionTimestamp.current}`);
     
-    // Simulate successful script generation
-    setTimeout(() => {
-      // Generate mock script links
-      const mockScriptLinks = {
-        episode_interview_script_1: "https://example.com/script1.pdf",
-        episode_interview_script_2: "https://example.com/script2.pdf",
-        episode_interview_script_3: "https://example.com/script3.pdf",
-        episode_interview_script_4: "https://example.com/script4.pdf"
-      };
-      
-      setScriptLinks(mockScriptLinks);
-      setIsScriptGenerated(true);
-      setScriptStatus("Pending");
-      
-      toast({
-        title: "Success!",
-        description: "Your podcast scripts have been generated.",
-        variant: "default",
-      });
-    }, 2000);
+    // Reset the last check time
+    lastCheckTime.current = 0;
     
-    // Note: The actual webhook call is commented out to prevent the fetch error
-    // In a production environment, you would uncomment this code and remove the setTimeout mock
+    // Set up an interval to check for new rows every second
+    if (script4CheckIntervalRef.current !== null) {
+      window.clearInterval(script4CheckIntervalRef.current);
+    }
     
-    /*
+    script4CheckIntervalRef.current = window.setInterval(() => {
+      if (isSubmitting && !foundMatchingRecord.current) {
+        checkForNewRow();
+      } else {
+        // Clear the interval if we're no longer submitting or found a match
+        if (script4CheckIntervalRef.current !== null) {
+          window.clearInterval(script4CheckIntervalRef.current);
+          script4CheckIntervalRef.current = null;
+        }
+      }
+    }, 1000); // Check every second
+    
+    // Set up a timeout to stop waiting after MAX_WAIT_TIME
+    if (maxWaitTimeoutRef.current !== null) {
+      window.clearTimeout(maxWaitTimeoutRef.current);
+    }
+    
+    maxWaitTimeoutRef.current = window.setTimeout(() => {
+      if (isSubmitting) {
+        console.log(`Maximum wait time of ${MAX_WAIT_TIME}ms exceeded. Stopping loading state.`);
+        
+        // Stop the loading state
+        setIsSubmitting(false);
+        
+        // Clear the script4 check interval
+        if (script4CheckIntervalRef.current !== null) {
+          window.clearInterval(script4CheckIntervalRef.current);
+          script4CheckIntervalRef.current = null;
+        }
+        
+        // Show notification
+        toast({
+          title: "Processing Timeout",
+          description: "The request is taking longer than expected. Please check the episodes list for your submission.",
+          variant: "destructive",
+        });
+      }
+    }, MAX_WAIT_TIME);
+    
+    // Check if there's already a record with this episode name
+    try {
+      const { data: existingData, error: existingError } = await supabase
+        .from('autoworkflow')
+        .select('id, created_at, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .eq('episode_interview_file_name', data.episodeName);
+      
+      if (existingError) {
+        console.error('Error checking for existing records:', existingError);
+      } else if (existingData && existingData.length > 0) {
+        console.log('Found existing records with the same episode name:', existingData);
+        
+        // Sort by created_at to get the most recent record
+        const sortedRecords = [...existingData].sort((a, b) => {
+          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return dateB - dateA; // Sort in descending order (newest first)
+        });
+        
+        const mostRecentRecord = sortedRecords[0];
+        
+        // If the most recent record has script links, use it
+        if (mostRecentRecord.episode_interview_script_1 || 
+            mostRecentRecord.episode_interview_script_2 || 
+            mostRecentRecord.episode_interview_script_3 || 
+            mostRecentRecord.episode_interview_script_4) {
+          
+          console.log('Using existing record with scripts:', mostRecentRecord);
+          
+          // Mark that we've found a matching record
+          foundMatchingRecord.current = true;
+          
+          // Store the record ID
+          currentEpisodeId.current = mostRecentRecord.id;
+          
+          // Update all script links
+          setScriptLinks({
+            episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
+            episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
+            episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
+            episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+          });
+          
+          // Stop the loading state
+          setIsSubmitting(false);
+          
+          // Clear the script4 check interval
+          if (script4CheckIntervalRef.current !== null) {
+            window.clearInterval(script4CheckIntervalRef.current);
+            script4CheckIntervalRef.current = null;
+          }
+          
+          // Clear the max wait timeout
+          if (maxWaitTimeoutRef.current !== null) {
+            window.clearTimeout(maxWaitTimeoutRef.current);
+            maxWaitTimeoutRef.current = null;
+          }
+          
+          // Set script generated flag
+          setIsScriptGenerated(true);
+          
+          // Update script status if available
+          if (mostRecentRecord.episode_interview_script_status) {
+            setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+          }
+          
+          // Show notification
+          toast({
+            title: "Scripts Found!",
+            description: `Existing scripts for "${data.episodeName}" have been loaded.`,
+            variant: "default",
+          });
+          
+          // Return early - no need to send the webhook request
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Error checking for existing records:', err);
+    }
+    
+    // Send the webhook request
     try {
       // Webhook URL
       const webhookUrl = "https://d-launch.app.n8n.cloud/webhook-test/a662a23d-ca8c-499c-8524-a1292fb55950";
       
+      // Use fetch with proper headers for binary file upload
       const response = await fetch(webhookUrl, {
         method: "POST",
         body: formData,
+        // No need to set Content-Type header as it will be automatically set with the boundary
       });
+      
+      console.log("Webhook response status:", response.status);
       
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Could not read error response");
-        throw new Error(`Server responded with status ${response.status}: ${response.statusText}. Details: ${errorText}`);
+        console.error(`Server responded with status ${response.status}: ${response.statusText}. Details: ${errorText}`);
+        
+        // Just log the error - we'll continue waiting for new rows
+        setLastError(`Error: Server responded with status ${response.status}`);
+        setDetailedError(errorText);
+      } else {
+        // Try to parse the response as JSON
+        try {
+          const responseData = await response.json();
+          console.log("Response data:", responseData);
+          
+          // Process the webhook response
+          processWebhookResponse(responseData);
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          setLastError("Error parsing response");
+          setDetailedError(parseError instanceof Error ? parseError.message : "Unknown error");
+        }
       }
       
-      // Parse the response as JSON
-      const responseData = await response.json();
-      console.log("Response data:", responseData);
+      // Note: We don't end the loading state here - we only stop when a new row is detected
       
-      // Process the webhook response
-      const success = processWebhookResponse(responseData);
-      
-      if (!success) {
-        toast({
-          title: "Warning",
-          description: "Received response but couldn't find script links. Please try again.",
-          variant: "destructive",
-        });
-      }
     } catch (error) {
       console.error("Error submitting form:", error);
       
@@ -344,13 +778,12 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       setLastError(`Error: ${errorMessage}`);
       setDetailedError(detailedMsg);
       
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
+      // Log the error but don't show it to the user - we'll continue waiting for new rows
+      console.error("Webhook error:", errorMessage);
+      console.error("Detailed error:", detailedMsg);
+      
+      // Note: We don't end the loading state here - we only stop when a new row is detected
     }
-    */
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -365,9 +798,31 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     setIsApprovalDialogOpen(true);
   };
 
-  const confirmApproval = () => {
+  const confirmApproval = async () => {
     setScriptStatus("Approved");
     setIsApprovalDialogOpen(false);
+    
+    // If we have a current episode ID, update the status in the database
+    if (currentEpisodeId.current) {
+      try {
+        const { error } = await supabase
+          .from('autoworkflow')
+          .update({ episode_interview_script_status: "Approved" })
+          .eq('id', currentEpisodeId.current);
+        
+        if (error) {
+          console.error('Error updating script status:', error);
+          toast({
+            title: "Update Error",
+            description: "Failed to update script status in the database, but marked as approved locally.",
+            variant: "destructive",
+          });
+        }
+      } catch (err) {
+        console.error('Error updating script status:', err);
+      }
+    }
+    
     toast({
       title: "Scripts Approved",
       description: "All scripts have been successfully approved.",
@@ -379,15 +834,13 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     setIsApprovalDialogOpen(false);
   };
 
-  // Helper function to check if a script link is valid
-  const isValidScriptLink = (link: string | null): boolean => {
-    return link !== null && link !== undefined && link.trim() !== '';
-  };
+  // Check if we have a valid selected episode
+  const hasValidSelectedEpisode = selectedEpisodeName && selectedEpisodeName.trim() !== '';
 
   return (
     <>
-      {/* Only show the viewing scripts header when an episode is selected */}
-      {selectedEpisodeName && selectedEpisodeName.trim() !== '' && (
+      {/* Only show the viewing scripts header when a valid episode is selected */}
+      {hasValidSelectedEpisode && (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
           <h3 className="text-lg font-medium text-blue-800 dark:text-blue-300">
             Viewing Scripts for: {selectedEpisodeName}
@@ -449,8 +902,16 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         <Button
           type="submit"
           className="w-full"
+          disabled={isSubmitting}
         >
-          Generate Script
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Generating Script...
+            </>
+          ) : (
+            "Generate Script"
+          )}
         </Button>
       </form>
 
@@ -513,9 +974,14 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           onClick={handleApproveScripts}
           className="w-full"
           variant={scriptStatus === "Approved" ? "outline" : "default"}
-          disabled={scriptStatus === "Approved" || !isScriptGenerated}
+          disabled={scriptStatus === "Approved" || !isScriptGenerated || !hasScript4}
+          title={!hasScript4 ? "Script #4 - Summary is required for approval" : ""}
         >
-          {scriptStatus === "Approved" ? "Scripts Approved" : "Approve Scripts"}
+          {scriptStatus === "Approved" 
+            ? "Scripts Approved" 
+            : !hasScript4 && isScriptGenerated
+              ? "Script #4 Required for Approval"
+              : "Approve Scripts"}
         </Button>
       </div>
 

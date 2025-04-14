@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Loader2, AlertCircle, Edit, Trash2, Save, X, RefreshCw, ExternalLink, Eye } from 'lucide-react';
+import { Loader2, AlertCircle, Edit, Trash2, Save, X, RefreshCw, ExternalLink, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -8,31 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 // Interface representing the exact columns in the autoworkflow table
 interface AutoworkflowRecord {
   id: string;
-  episode_number?: string;
-  source_document_file_name?: string;
-  source_document?: string;
-  episode_interview_file_name?: string;
-  episode_interview_file?: string;
-  episode_interview_full_script?: string;
-  episode_interview_script_1?: string;
-  episode_interview_script_2?: string;
-  episode_interview_script_3?: string;
-  episode_interview_script_4?: string;
-  episode_titles?: string;
-  episode_description?: string;
-  episode_intro_transcript?: string;
-  linkedin_post_copy?: string;
-  x_post_copy?: string;
-  podcast_excerpt?: string;
-  show_notes?: string;
-  episode_intro_audio_file?: string;
-  master_audio_file?: string;
-  episode_cover_art?: string;
-  scheduled_date?: string;
-  unix_timestamp?: number;
-  publish_date?: string;
-  publish_time?: string;
-  episode_interview_script_status?: string;
+  created_at?: string;
+  [key: string]: any; // Allow for dynamic columns
 }
 
 // Interface for script links to be passed to parent component
@@ -49,6 +26,46 @@ interface EpisodesListProps {
   onRecordSelect?: (scriptLinks: ScriptLinks, episodeName: string | undefined) => void;
 }
 
+// Sort direction type
+type SortDirection = 'asc' | 'desc' | null;
+
+// Sort state interface
+interface SortState {
+  column: string | null;
+  direction: SortDirection;
+}
+
+// Predefined column order
+const PREDEFINED_COLUMN_ORDER = [
+  'episode_interview_file_name',
+  'episode_interview_file',
+  'id',
+  'created_at',
+  'episode_number',
+  'source_document_file_name',
+  'source_document',
+  'episode_interview_full_script',
+  'episode_interview_script_1',
+  'episode_interview_script_2',
+  'episode_interview_script_3',
+  'episode_interview_script_4',
+  'episode_titles',
+  'episode_description',
+  'episode_intro_transcript',
+  'linkedin_post_copy',
+  'x_post_copy',
+  'podcast_excerpt',
+  'show_notes',
+  'episode_intro_audio_file',
+  'master_audio_file',
+  'episode_cover_art',
+  'scheduled_date',
+  'unix_timestamp',
+  'publish_date',
+  'publish_time',
+  'episode_interview_script_status'
+];
+
 // Helper to check if a string is a valid URL
 const isValidUrl = (string: string): boolean => {
   try {
@@ -59,9 +76,25 @@ const isValidUrl = (string: string): boolean => {
   }
 };
 
+// Format date for display
+const formatDate = (dateString: string | undefined): string => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleString();
+  } catch (e) {
+    return dateString || '';
+  }
+};
+
 // Render cell content with clickable links if applicable
-const CellContent = ({ value }: { value: string | number | null | undefined }) => {
+const CellContent = ({ value, column }: { value: string | number | null | undefined, column: string }) => {
   if (value === null || value === undefined) return <span>null</span>;
+  
+  // Format date for created_at column
+  if (column === 'created_at') {
+    return <span>{formatDate(String(value))}</span>;
+  }
   
   const stringValue = String(value);
   
@@ -72,6 +105,7 @@ const CellContent = ({ value }: { value: string | number | null | undefined }) =
         target="_blank" 
         rel="noopener noreferrer"
         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+        onClick={(e) => e.stopPropagation()} // Prevent row click when clicking the link
       >
         {stringValue.length > 40 ? `${stringValue.substring(0, 40)}...` : stringValue}
         <ExternalLink className="h-3 w-3 ml-1 inline" />
@@ -82,6 +116,30 @@ const CellContent = ({ value }: { value: string | number | null | undefined }) =
   return <span>{typeof value === 'object' ? JSON.stringify(value) : stringValue}</span>;
 };
 
+// Compare function for sorting
+const compareValues = (a: any, b: any, isAsc: boolean = true): number => {
+  // Handle null/undefined values
+  if (a === null || a === undefined) return isAsc ? -1 : 1;
+  if (b === null || b === undefined) return isAsc ? 1 : -1;
+  
+  // Handle numbers
+  if (!isNaN(Number(a)) && !isNaN(Number(b))) {
+    return isAsc ? Number(a) - Number(b) : Number(b) - Number(a);
+  }
+  
+  // Handle dates
+  const dateA = new Date(a);
+  const dateB = new Date(b);
+  if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
+    return isAsc ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
+  }
+  
+  // Handle strings
+  const strA = String(a).toLowerCase();
+  const strB = String(b).toLowerCase();
+  return isAsc ? strA.localeCompare(strB) : strB.localeCompare(strA);
+};
+
 export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   const [records, setRecords] = useState<AutoworkflowRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,10 +148,12 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedRecord, setEditedRecord] = useState<AutoworkflowRecord | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [sortState, setSortState] = useState<SortState>({ column: null, direction: null });
   const { toast } = useToast();
 
-  // Fetch records from Supabase
-  const fetchRecords = async (showLoading = true) => {
+  // Fetch data from Supabase
+  const fetchData = async (showLoading = true) => {
     try {
       if (showLoading) {
         setIsLoading(true);
@@ -102,6 +162,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
       }
       setError(null);
       
+      // Fetch the records first
       const { data, error } = await supabase
         .from('autoworkflow')
         .select('*');
@@ -110,19 +171,31 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
         throw new Error(error.message);
       }
       
+      // Set the records
       setRecords(data || []);
+      
+      // If we have records, extract available columns
+      if (data && data.length > 0) {
+        // Get all columns from the first record
+        const allColumns = Object.keys(data[0]);
+        setAvailableColumns(allColumns);
+      }
+      
+      // Dispatch a custom event to notify other components that refresh was clicked
+      window.dispatchEvent(new CustomEvent('episodes-list-refresh'));
     } catch (err) {
-      console.error('Error fetching records:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch records');
+      console.error('Error fetching data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   };
 
-  // Set up real-time subscription
+  // Set up real-time subscription and auto-refresh
   useEffect(() => {
-    fetchRecords();
+    // Initial data fetch
+    fetchData();
 
     // Subscribe to changes
     const subscription = supabase
@@ -133,35 +206,41 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
         table: 'autoworkflow' 
       }, (payload) => {
         console.log('Change received!', payload);
-        fetchRecords(false);
+        fetchData(false);
       })
       .subscribe();
 
-    // Cleanup subscription on unmount
+    // Listen for auto-refresh events from PodcastForm
+    const handleAutoRefresh = () => {
+      fetchData(false);
+    };
+
+    // Add event listener for auto-refresh
+    window.addEventListener('episodes-list-auto-refresh', handleAutoRefresh);
+
+    // Cleanup subscription and event listener on unmount
     return () => {
       subscription.unsubscribe();
+      window.removeEventListener('episodes-list-auto-refresh', handleAutoRefresh);
     };
   }, []);
 
-  // Manual refresh function
-  const handleRefresh = () => {
-    fetchRecords(false);
-  };
-
   // Start editing a record
-  const handleEdit = (record: AutoworkflowRecord) => {
+  const handleEdit = (record: AutoworkflowRecord, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click when clicking edit button
     setEditingId(record.id);
     setEditedRecord({ ...record });
   };
 
   // Cancel editing
-  const handleCancelEdit = () => {
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click when clicking cancel button
     setEditingId(null);
     setEditedRecord(null);
   };
 
   // Handle input change for editing
-  const handleEditChange = (key: keyof AutoworkflowRecord, value: string) => {
+  const handleEditChange = (key: string, value: string) => {
     if (editedRecord) {
       setEditedRecord({
         ...editedRecord,
@@ -171,7 +250,8 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   };
 
   // Save edited record to Supabase
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click when clicking save button
     if (!editedRecord) return;
     
     try {
@@ -205,7 +285,8 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   };
 
   // Delete a record from Supabase
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click when clicking delete button
     if (!confirm("Are you sure you want to delete this record? This action cannot be undone.")) {
       return;
     }
@@ -250,7 +331,21 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   };
 
   // Handle selecting or unselecting a record to view its scripts
-  const handleViewScripts = (record: AutoworkflowRecord) => {
+  const handleViewScripts = (record: AutoworkflowRecord, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click when clicking view button
+    selectRecord(record);
+  };
+
+  // Handle row click to select a record
+  const handleRowClick = (record: AutoworkflowRecord) => {
+    // Don't do anything if we're currently editing
+    if (editingId === record.id) return;
+    
+    selectRecord(record);
+  };
+
+  // Common function to select a record
+  const selectRecord = (record: AutoworkflowRecord) => {
     // If the record is already selected, unselect it
     if (selectedRecordId === record.id) {
       setSelectedRecordId(null);
@@ -264,11 +359,6 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_status: undefined
         }, undefined);
       }
-      
-      toast({
-        title: "Selection Cleared",
-        description: "Episode selection has been cleared.",
-      });
     } else {
       // Otherwise, select the record
       setSelectedRecordId(record.id);
@@ -282,12 +372,66 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_status: record.episode_interview_script_status
         }, record.episode_interview_file_name);
       }
-      
-      toast({
-        title: "Scripts Loaded",
-        description: `Loaded scripts for ${record.episode_interview_file_name || 'Unnamed Episode'}`,
-      });
     }
+  };
+
+  // Handle column sort
+  const handleSort = (column: string) => {
+    setSortState(prevState => {
+      // If clicking on the same column, cycle through sort directions: null -> asc -> desc -> null
+      if (prevState.column === column) {
+        if (prevState.direction === null) return { column, direction: 'asc' };
+        if (prevState.direction === 'asc') return { column, direction: 'desc' };
+        return { column: null, direction: null }; // Reset sort
+      }
+      // If clicking on a different column, start with ascending sort
+      return { column, direction: 'asc' };
+    });
+  };
+
+  // Get ordered columns based on the predefined order and available columns
+  const orderedColumns = useMemo(() => {
+    if (records.length === 0) return [];
+    
+    // Filter the predefined column order to only include columns that exist in the data
+    const filteredColumns = PREDEFINED_COLUMN_ORDER.filter(col => 
+      availableColumns.includes(col)
+    );
+    
+    // Add any columns that exist in the data but aren't in the predefined order
+    const remainingColumns = availableColumns.filter(col => 
+      !PREDEFINED_COLUMN_ORDER.includes(col)
+    ).sort();
+    
+    return [...filteredColumns, ...remainingColumns];
+  }, [records, availableColumns]);
+
+  // Sort records based on current sort state
+  const sortedRecords = useMemo(() => {
+    if (!sortState.column || !sortState.direction) {
+      return records;
+    }
+    
+    return [...records].sort((a, b) => {
+      return compareValues(a[sortState.column!], b[sortState.column!], sortState.direction === 'asc');
+    });
+  }, [records, sortState]);
+
+  // Render sort indicator
+  const renderSortIndicator = (column: string) => {
+    if (sortState.column !== column) {
+      return <ArrowUpDown className="h-3 w-3 ml-1 inline opacity-50" />;
+    }
+    
+    if (sortState.direction === 'asc') {
+      return <ArrowUp className="h-3 w-3 ml-1 inline" />;
+    }
+    
+    if (sortState.direction === 'desc') {
+      return <ArrowDown className="h-3 w-3 ml-1 inline" />;
+    }
+    
+    return null;
   };
 
   if (isLoading) {
@@ -311,7 +455,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
               variant="outline" 
               size="sm" 
               className="mt-3"
-              onClick={() => fetchRecords()}
+              onClick={() => fetchData()}
             >
               Retry
             </Button>
@@ -326,16 +470,10 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh} 
-            disabled={isRefreshing}
-            className="flex items-center gap-1"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
+          <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
+            <RefreshCw className="h-3 w-3 mr-1.5 text-gray-400" />
+            Episodes list is updated automatically
+          </p>
         </div>
         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-8 text-center">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No records found</h3>
@@ -351,19 +489,10 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">Episodes List</h2>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh} 
-            disabled={isRefreshing}
-            className="flex items-center gap-1"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
-        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
+          <RefreshCw className="h-3 w-3 mr-1.5 text-gray-400" />
+          Episodes list is updated automatically
+        </p>
       </div>
       <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -372,31 +501,36 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Actions
               </th>
-              {Object.keys(records[0]).map((column) => (
+              {orderedColumns.map((column) => (
                 <th 
                   key={column}
                   scope="col" 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => handleSort(column)}
                 >
-                  {column}
+                  <div className="flex items-center">
+                    {column}
+                    {renderSortIndicator(column)}
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-            {records.map((record) => (
+            {sortedRecords.map((record) => (
               <tr 
                 key={record.id}
-                className={selectedRecordId === record.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
+                className={`${selectedRecordId === record.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''} ${editingId !== record.id ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800' : ''}`}
+                onClick={() => editingId !== record.id && handleRowClick(record)}
               >
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <div className="flex space-x-2">
                     {editingId === record.id ? (
                       <>
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={handleSaveEdit}
+                          onClick={(e) => handleSaveEdit(e)}
                           className="p-1 h-8 w-8"
                           title="Save"
                         >
@@ -405,7 +539,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={handleCancelEdit}
+                          onClick={(e) => handleCancelEdit(e)}
                           className="p-1 h-8 w-8"
                           title="Cancel"
                         >
@@ -417,7 +551,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={() => handleViewScripts(record)}
+                          onClick={(e) => handleViewScripts(record, e)}
                           className={`p-1 h-8 w-8 ${selectedRecordId === record.id ? 'bg-blue-100 dark:bg-blue-800' : ''}`}
                           title={selectedRecordId === record.id ? "Unselect" : "View Scripts"}
                         >
@@ -426,7 +560,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={() => handleEdit(record)}
+                          onClick={(e) => handleEdit(record, e)}
                           className="p-1 h-8 w-8"
                           title="Edit"
                         >
@@ -435,7 +569,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          onClick={() => handleDelete(record.id)}
+                          onClick={(e) => handleDelete(record.id, e)}
                           className="p-1 h-8 w-8 text-red-500 hover:text-red-700"
                           title="Delete"
                         >
@@ -445,19 +579,20 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
                     )}
                   </div>
                 </td>
-                {Object.entries(record).map(([key, value]) => (
+                {orderedColumns.map((column) => (
                   <td 
-                    key={`${record.id}-${key}`} 
+                    key={`${record.id}-${column}`} 
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 overflow-hidden text-ellipsis max-w-xs"
                   >
                     {editingId === record.id && editedRecord ? (
                       <Input
-                        value={editedRecord[key as keyof AutoworkflowRecord] || ''}
-                        onChange={(e) => handleEditChange(key as keyof AutoworkflowRecord, e.target.value)}
+                        value={editedRecord[column] || ''}
+                        onChange={(e) => handleEditChange(column, e.target.value)}
                         className="w-full"
+                        onClick={(e) => e.stopPropagation()} // Prevent row click when editing
                       />
                     ) : (
-                      <CellContent value={value} />
+                      <CellContent value={record[column]} column={column} />
                     )}
                   </td>
                 ))}

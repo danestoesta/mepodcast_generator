@@ -23,8 +23,14 @@ function App() {
     scriptLinks: ScriptLinks, 
     episodeName: string | undefined
   ) => {
-    setSelectedScriptLinks(scriptLinks);
-    setSelectedEpisodeName(episodeName || "Unnamed Episode");
+    // When deselecting (episodeName is undefined), set both states to null
+    if (!episodeName) {
+      setSelectedScriptLinks(null);
+      setSelectedEpisodeName(null);
+    } else {
+      setSelectedScriptLinks(scriptLinks);
+      setSelectedEpisodeName(episodeName);
+    }
   };
 
   return (
