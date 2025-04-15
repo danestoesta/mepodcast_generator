@@ -41,14 +41,23 @@ const toastVariants = cva(
 const Toast = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> &
-    VariantProps<typeof toastVariants>
->(({ className, variant, ...props }, ref) => {
+    VariantProps<typeof toastVariants> & {
+      progress?: number; // Add progress prop
+    }
+>(({ className, variant, progress, ...props }, ref) => {
   return (
     <ToastPrimitives.Root
       ref={ref}
       className={cn(toastVariants({ variant }), className)}
       {...props}
-    />
+    >
+      {props.children}
+      {/* Add progress bar if progress is defined */}
+      {typeof progress === 'number' && (
+        <div className="absolute bottom-0 left-0 h-1 bg-blue-500 dark:bg-blue-400 transition-all duration-150 ease-out"
+             style={{ width: `${progress}%` }} />
+      )}
+    </ToastPrimitives.Root>
   );
 });
 Toast.displayName = ToastPrimitives.Root.displayName;
@@ -110,7 +119,9 @@ const ToastDescription = React.forwardRef<
 ));
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
-type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>;
+type ToastProps = React.ComponentPropsWithoutRef<typeof Toast> & {
+  progress?: number; // Add progress to ToastProps
+};
 
 type ToastActionElement = React.ReactElement<typeof ToastAction>;
 

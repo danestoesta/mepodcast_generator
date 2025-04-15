@@ -6,13 +6,14 @@ import type {
 } from "@/components/ui/toast";
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_REMOVE_DELAY = 3000; // Changed to 3 seconds (3000ms)
 
 type ToasterToast = ToastProps & {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
+  progress?: number; // Added progress property for loading bar
 };
 
 const actionTypes = {
@@ -54,6 +55,7 @@ interface State {
 }
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+const progressIntervals = new Map<string, ReturnType<typeof setInterval>>(); // Added for progress tracking
 
 const addToRemoveQueue = (toastId: string) => {
   if (toastTimeouts.has(toastId)) {
@@ -69,6 +71,31 @@ const addToRemoveQueue = (toastId: string) => {
   }, TOAST_REMOVE_DELAY);
 
   toastTimeouts.set(toastId, timeout);
+};
+
+// Start progress animation for a toast
+const startProgressAnimation = (toastId: string) => {
+  if (progressIntervals.has(toastId)) {
+    return;
+  }
+
+  let progress = 0;
+  const interval = setInterval(() => {
+    progress += 2; // Increment by 2% every 60ms to complete in ~3 seconds
+    
+    if (progress >= 100) {
+      clearInterval(interval);
+      progressIntervals.delete(toastId);
+      return;
+    }
+    
+    dispatch({
+      type: "UPDATE_TOAST",
+      toast: { id: toastId, progress },
+    });
+  }, 60); // Update every 60ms
+
+  progressIntervals.set(toastId, interval);
 };
 
 export const reducer = (state: State, action: Action): State => {
@@ -155,11 +182,18 @@ function toast({ ...props }: Toast) {
       ...props,
       id,
       open: true,
+      progress: 0, // Initialize progress at 0
       onOpenChange: (open) => {
         if (!open) dismiss();
       },
     },
   });
+
+  // Start progress animation for this toast
+  startProgressAnimation(id);
+
+  // Auto-dismiss after TOAST_REMOVE_DELAY
+  setTimeout(dismiss, TOAST_REMOVE_DELAY);
 
   return {
     id: id,

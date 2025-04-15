@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Loader2, AlertCircle, Edit, Trash2, Save, X, RefreshCw, ExternalLink, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Loader2, AlertCircle, Edit, Trash2, Save, X, ExternalLink, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -470,8 +470,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between">
-          <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
-            <RefreshCw className="h-3 w-3 mr-1.5 text-gray-400" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             Episodes list is updated automatically
           </p>
         </div>
@@ -489,8 +488,7 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
-          <RefreshCw className="h-3 w-3 mr-1.5 text-gray-400" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           Episodes list is updated automatically
         </p>
       </div>

@@ -1,44 +1,100 @@
-import * as React from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 
 interface ScriptApprovalDialogProps {
-  isOpen: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
+  scriptLinks: {
+    episode_interview_script_1: string | null;
+    episode_interview_script_2: string | null;
+    episode_interview_script_3: string | null;
+    episode_interview_script_4: string | null;
+    episode_interview_script_status?: string;
+  };
+  episodeName?: string;
+  onApprove?: () => void;
 }
 
-export function ScriptApprovalDialog({ 
-  isOpen, 
-  onConfirm, 
-  onCancel 
-}: ScriptApprovalDialogProps) {
+export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: ScriptApprovalDialogProps) {
+  // Set up automatic refresh every second
+  useEffect(() => {
+    // Function to trigger refresh event
+    const triggerRefresh = () => {
+      // Dispatch event to notify EpisodesList to refresh
+      window.dispatchEvent(new CustomEvent('episodes-list-auto-refresh'));
+    };
+
+    // Set up interval for automatic refresh
+    const refreshInterval = setInterval(triggerRefresh, 1000);
+
+    // Clean up interval on component unmount
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, []);
+
+  // Helper function to render script links
+  const renderScriptLink = (url: string | null, index: number) => {
+    if (!url) return <p className="text-gray-500 dark:text-gray-400">No script available</p>;
+    
+    return (
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+      >
+        Script {index} {url.includes('approved') ? '(Approved)' : ''}
+      </a>
+    );
+  };
+
   return (
-    <AlertDialog.Root open={isOpen} onOpenChange={onCancel}>
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <AlertDialog.Content className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg md:w-full">
-          <AlertDialog.Title className="text-lg font-semibold text-foreground">
-            Approve Scripts
-          </AlertDialog.Title>
-          <AlertDialog.Description className="text-sm text-muted-foreground">
-            Are you sure you want to approve all the scripts? This action cannot be undone.
-          </AlertDialog.Description>
-          <div className="flex justify-end gap-2">
-            <AlertDialog.Cancel asChild>
-              <Button variant="outline" onClick={onCancel}>
-                No
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action asChild>
-              <Button variant="default" onClick={onConfirm}>
-                Yes
-              </Button>
-            </AlertDialog.Action>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold">
+          {episodeName ? `Scripts for: ${episodeName}` : ''}
+        </h2>
+        {/* This is a placeholder for the h3 heading that's in the parent component */}
+        {/* <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scripts</h3> */}
+      </div>
+      
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+        {!scriptLinks?.episode_interview_script_1 && 
+         !scriptLinks?.episode_interview_script_2 && 
+         !scriptLinks?.episode_interview_script_3 && 
+         !scriptLinks?.episode_interview_script_4 ? (
+          <div className="text-center py-4">
+            <p className="text-gray-500 dark:text-gray-400">
+              
+            </p>
           </div>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+        ) : (
+          <div className="space-y-3">
+            {scriptLinks?.episode_interview_script_status && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  Status: {scriptLinks.episode_interview_script_status}
+                </p>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              {renderScriptLink(scriptLinks?.episode_interview_script_1, 1)}
+              {renderScriptLink(scriptLinks?.episode_interview_script_2, 2)}
+              {renderScriptLink(scriptLinks?.episode_interview_script_3, 3)}
+              {renderScriptLink(scriptLinks?.episode_interview_script_4, 4)}
+            </div>
+          </div>
+        )}
+      </div>
+      
+      {onApprove && (
+        <Button 
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white" 
+          onClick={onApprove}
+        >
+          Approve Scripts
+        </Button>
+      )}
+    </div>
   );
 }
