@@ -41,6 +41,8 @@ interface WebhookResponseItem {
   episode_interview_full_script?: string;
   episode_interview_file?: string;
   episode_interview_script_status?: string;
+  episode_text_files_status?: string; // New column
+  podcast_status?: string; // New column
   [key: string]: any; // For other fields we don't explicitly need
 }
 
@@ -53,6 +55,8 @@ interface ScriptLinks {
   episode_interview_full_script?: string | null;
   episode_interview_file?: string | null;
   episode_interview_script_status?: string;
+  episode_text_files_status?: string; // New column
+  podcast_status?: string; // New column
 }
 
 interface PodcastFormProps {
@@ -71,6 +75,8 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isScriptGenerated, setIsScriptGenerated] = useState(false);
   const [scriptStatus, setScriptStatus] = useState<"Pending" | "Approved">("Pending");
+  const [textFilesStatus, setTextFilesStatus] = useState<string | null>(null); // New state
+  const [podcastStatus, setPodcastStatus] = useState<string | null>(null); // New state
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
@@ -180,6 +186,19 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         setScriptStatus("Pending");
       }
       
+      // Update new status fields
+      if (selectedScriptLinks.episode_text_files_status) {
+        setTextFilesStatus(selectedScriptLinks.episode_text_files_status);
+      } else {
+        setTextFilesStatus(null);
+      }
+      
+      if (selectedScriptLinks.podcast_status) {
+        setPodcastStatus(selectedScriptLinks.podcast_status);
+      } else {
+        setPodcastStatus(null);
+      }
+      
       // Set isScriptGenerated to true if any script link exists
       const hasAnyScript = Object.values(selectedScriptLinks).some(link => 
         link !== null && link !== undefined && link !== ''
@@ -206,6 +225,8 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       
       // Reset script status
       setScriptStatus("Pending");
+      setTextFilesStatus(null);
+      setPodcastStatus(null);
       setIsScriptGenerated(false);
     }
   }, [selectedScriptLinks, selectedEpisodeName, setValue]);
@@ -350,7 +371,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       // Query the database for records with the current episode name
       const { data, error } = await supabase
         .from('autoworkflow')
-        .select('id, created_at, episode_interview_file_name, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
+        .select('id, created_at, episode_interview_file_name, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status, episode_text_files_status, podcast_status')
         .eq('episode_interview_file_name', currentEpisodeName.current);
       
       if (error) {
@@ -402,6 +423,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         // Update script status if available
         if (mostRecentRecord.episode_interview_script_status) {
           setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+        }
+        
+        // Update new status fields
+        if (mostRecentRecord.episode_text_files_status) {
+          setTextFilesStatus(mostRecentRecord.episode_text_files_status);
+        }
+        
+        if (mostRecentRecord.podcast_status) {
+          setPodcastStatus(mostRecentRecord.podcast_status);
         }
         
         // Check if Script #1 is available but not Script #4
@@ -490,6 +520,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               setScriptStatus(newRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
             }
             
+            // Update new status fields
+            if (newRecord.episode_text_files_status) {
+              setTextFilesStatus(newRecord.episode_text_files_status);
+            }
+            
+            if (newRecord.podcast_status) {
+              setPodcastStatus(newRecord.podcast_status);
+            }
+            
             // Check if Script #1 is available but not Script #4
             const hasScript1 = !!newRecord.episode_interview_script_1;
             const hasScript4 = !!newRecord.episode_interview_script_4;
@@ -568,6 +607,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             // Update script status if available
             if (updatedRecord.episode_interview_script_status) {
               setScriptStatus(updatedRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+            }
+            
+            // Update new status fields
+            if (updatedRecord.episode_text_files_status) {
+              setTextFilesStatus(updatedRecord.episode_text_files_status);
+            }
+            
+            if (updatedRecord.podcast_status) {
+              setPodcastStatus(updatedRecord.podcast_status);
             }
             
             // Check if Script #1 is available but not Script #4
@@ -662,6 +710,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             setScriptStatus(item.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
           }
           
+          // Update new status fields
+          if (item.episode_text_files_status) {
+            setTextFilesStatus(item.episode_text_files_status);
+          }
+          
+          if (item.podcast_status) {
+            setPodcastStatus(item.podcast_status);
+          }
+          
           // Check if Script #1 is available but not Script #4
           const hasScript1 = !!item.episode_interview_script_1;
           const hasScript4 = !!item.episode_interview_script_4;
@@ -719,6 +776,8 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       episode_interview_file: null
     });
     setIsScriptGenerated(false);
+    setTextFilesStatus(null);
+    setPodcastStatus(null);
     
     // Create FormData
     const formData = new FormData();
@@ -787,7 +846,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     try {
       const { data: existingData, error: existingError } = await supabase
         .from('autoworkflow')
-        .select('id, created_at, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
+        .select('id, created_at, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status, episode_text_files_status, podcast_status')
         .eq('episode_interview_file_name', data.episodeName);
       
       if (existingError) {
@@ -850,6 +909,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         // Update script status if available
         if (mostRecentRecord.episode_interview_script_status) {
           setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+        }
+        
+        // Update new status fields
+        if (mostRecentRecord.episode_text_files_status) {
+          setTextFilesStatus(mostRecentRecord.episode_text_files_status);
+        }
+        
+        if (mostRecentRecord.podcast_status) {
+          setPodcastStatus(mostRecentRecord.podcast_status);
         }
         
         // Show notification
@@ -964,7 +1032,11 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       try {
         const { error } = await supabase
           .from('autoworkflow')
-          .update({ episode_interview_script_status: "Approved" })
+          .update({ 
+            episode_interview_script_status: "Approved",
+            episode_text_files_status: "Pending", // Set initial status for text files
+            podcast_status: "Pending" // Set initial status for podcast
+          })
           .eq('id', currentEpisodeId.current);
         
         if (error) {
@@ -974,6 +1046,10 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             description: "Failed to update script status in the database, but marked as approved locally.",
             variant: "destructive",
           });
+        } else {
+          // Update local state
+          setTextFilesStatus("Pending");
+          setPodcastStatus("Pending");
         }
       } catch (err) {
         console.error('Error updating script status:', err);
@@ -982,7 +1058,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     
     toast({
       title: "Scripts Approved",
-      description: "All scripts have been successfully approved.",
+      description: "All scripts have been successfully approved. Audio generation has started.",
       variant: "default",
     });
   };
@@ -1000,7 +1076,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     try {
       const { data, error } = await supabase
         .from('autoworkflow')
-        .select('id, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
+        .select('id, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status, episode_text_files_status, podcast_status')
         .eq('episode_interview_file_name', currentEpisodeName.current);
       
       if (error) {
@@ -1032,6 +1108,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
         }
         
+        // Update new status fields
+        if (mostRecentRecord.episode_text_files_status) {
+          setTextFilesStatus(mostRecentRecord.episode_text_files_status);
+        }
+        
+        if (mostRecentRecord.podcast_status) {
+          setPodcastStatus(mostRecentRecord.podcast_status);
+        }
+        
         // Set script generated flag if any script exists
         const hasAnyScript = mostRecentRecord.episode_interview_script_1 || 
                             mostRecentRecord.episode_interview_script_2 || 
@@ -1055,6 +1140,38 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
 
   // Check if we have a valid selected episode
   const hasValidSelectedEpisode = selectedEpisodeName && selectedEpisodeName.trim() !== '';
+
+  // Render status badges for text files and podcast
+  const renderStatusBadge = (status: string | null, type: string) => {
+    if (!status) return null;
+    
+    let bgColor = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100";
+    let icon = <AlertCircle className="w-3 h-3 mr-1" />;
+    
+    if (status === "Pending") {
+      bgColor = "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100";
+      icon = <AlertCircle className="w-3 h-3 mr-1" />;
+    } else if (status === "Processing") {
+      bgColor = "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100";
+      icon = <Loader2 className="w-3 h-3 mr-1 animate-spin" />;
+    } else if (status === "Completed") {
+      bgColor = "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100";
+      icon = <CheckCircle className="w-3 h-3 mr-1" />;
+    } else if (status === "Failed") {
+      bgColor = "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100";
+      icon = <AlertCircle className="w-3 h-3 mr-1" />;
+    }
+    
+    return (
+      <div className="flex items-center mt-1">
+        <span className="text-sm font-medium mr-2">{type}:</span>
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor}`}>
+          {icon}
+          {status}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -1183,20 +1300,28 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               <span className="ml-1">Refresh</span>
             </Button>
             
-            <div className="flex items-center">
-              <span className="text-sm font-medium mr-2">Script Status:</span>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                scriptStatus === "Approved" 
-                  ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100" 
-                  : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
-              }`}>
-                {scriptStatus === "Approved" ? (
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 mr-1" />
-                )}
-                {scriptStatus}
-              </span>
+            <div className="flex flex-col">
+              <div className="flex items-center">
+                <span className="text-sm font-medium mr-2">Script Status:</span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  scriptStatus === "Approved" 
+                    ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100" 
+                    : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
+                }`}>
+                  {scriptStatus === "Approved" ? (
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                  )}
+                  {scriptStatus}
+                </span>
+              </div>
+              
+              {/* Show text files status if available */}
+              {textFilesStatus && renderStatusBadge(textFilesStatus, "Text Files")}
+              
+              {/* Show podcast status if available */}
+              {podcastStatus && renderStatusBadge(podcastStatus, "Podcast")}
             </div>
           </div>
         </div>
@@ -1242,7 +1367,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           title={!hasScript4 ? "Script #4 - Summary is required for approval" : ""}
         >
           {scriptStatus === "Approved" 
-            ? "Audio Generated" 
+            ? "Audio Generation In Progress" 
             : !hasScript4 && isScriptGenerated
               ? "Script #4 Required for Audio Generation"
               : "Generate Audio"}

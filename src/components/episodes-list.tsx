@@ -9,6 +9,8 @@ import { useToast } from '@/hooks/use-toast';
 interface AutoworkflowRecord {
   id: string;
   created_at?: string;
+  episode_text_files_status?: string; // New column
+  podcast_status?: string; // New column
   [key: string]: any; // Allow for dynamic columns
 }
 
@@ -21,6 +23,8 @@ interface ScriptLinks {
   episode_interview_full_script: string | null;
   episode_interview_file: string | null;
   episode_interview_script_status?: string;
+  episode_text_files_status?: string; // New column
+  podcast_status?: string; // New column
 }
 
 // Props for the EpisodesList component
@@ -51,6 +55,9 @@ const PREDEFINED_COLUMN_ORDER = [
   'episode_interview_script_2',
   'episode_interview_script_3',
   'episode_interview_script_4',
+  'episode_interview_script_status',
+  'episode_text_files_status', // New column
+  'podcast_status', // New column
   'episode_titles',
   'episode_description',
   'episode_intro_transcript',
@@ -64,8 +71,7 @@ const PREDEFINED_COLUMN_ORDER = [
   'scheduled_date',
   'unix_timestamp',
   'publish_date',
-  'publish_time',
-  'episode_interview_script_status'
+  'publish_time'
 ];
 
 // Helper to check if a string is a valid URL
@@ -315,7 +321,9 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
             episode_interview_script_4: null,
             episode_interview_full_script: null,
             episode_interview_file: null,
-            episode_interview_script_status: undefined
+            episode_interview_script_status: undefined,
+            episode_text_files_status: undefined, // New column
+            podcast_status: undefined // New column
           }, undefined);
         }
       }
@@ -362,7 +370,9 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_4: null,
           episode_interview_full_script: null,
           episode_interview_file: null,
-          episode_interview_script_status: undefined
+          episode_interview_script_status: undefined,
+          episode_text_files_status: undefined, // New column
+          podcast_status: undefined // New column
         }, undefined);
       }
     } else {
@@ -377,7 +387,9 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_4: record.episode_interview_script_4 || null,
           episode_interview_full_script: record.episode_interview_full_script || null,
           episode_interview_file: record.episode_interview_file || null,
-          episode_interview_script_status: record.episode_interview_script_status
+          episode_interview_script_status: record.episode_interview_script_status,
+          episode_text_files_status: record.episode_text_files_status, // New column
+          podcast_status: record.podcast_status // New column
         }, record.episode_interview_file_name);
       }
     }

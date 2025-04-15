@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 
 interface ScriptApprovalDialogProps {
-  scriptLinks: {
+  scriptLinks?: {
     episode_interview_script_1: string | null;
     episode_interview_script_2: string | null;
     episode_interview_script_3: string | null;
@@ -11,6 +11,8 @@ interface ScriptApprovalDialogProps {
     episode_interview_full_script?: string | null;
     episode_interview_file?: string | null;
     episode_interview_script_status?: string;
+    episode_text_files_status?: string; // New column
+    podcast_status?: string; // New column
   };
   episodeName?: string;
   onApprove?: () => void;
@@ -55,7 +57,7 @@ export function ScriptApprovalDialog({
         try {
           const { data, error } = await supabase
             .from('autoworkflow')
-            .select('episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
+            .select('episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status, episode_text_files_status, podcast_status')
             .eq('episode_interview_file_name', episodeName)
             .single();
           
@@ -100,6 +102,15 @@ export function ScriptApprovalDialog({
                 updatedLinks.episode_interview_script_status = data.episode_interview_script_status;
               }
               
+              // Update new status fields
+              if (data.episode_text_files_status) {
+                updatedLinks.episode_text_files_status = data.episode_text_files_status;
+              }
+              
+              if (data.podcast_status) {
+                updatedLinks.podcast_status = data.podcast_status;
+              }
+              
               return updatedLinks;
             });
           }
@@ -127,7 +138,7 @@ export function ScriptApprovalDialog({
   // Update local state when props change (initial selection)
   useEffect(() => {
     // Only update from props when episode changes or on initial load
-    if (!episodeName || Object.values(currentScriptLinks).every(val => val === null)) {
+    if (!episodeName || Object.values(currentScriptLinks || {}).every(val => val === null)) {
       setCurrentScriptLinks(scriptLinks);
     }
   }, [scriptLinks, episodeName]);
@@ -148,13 +159,39 @@ export function ScriptApprovalDialog({
     );
   };
 
+  // Render status badges for text files and podcast
+  const renderStatusBadge = (status: string | null | undefined, label: string) => {
+    if (!status) return null;
+    
+    let badgeClass = "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
+    
+    if (status === "Pending") {
+      badgeClass = "bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-300";
+    } else if (status === "Processing") {
+      badgeClass = "bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-300";
+    } else if (status === "Completed") {
+      badgeClass = "bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-300";
+    } else if (status === "Failed") {
+      badgeClass = "bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-300";
+    }
+    
+    return (
+      <div className="mt-1">
+        <span className="text-sm">{label}: </span>
+        <span className={`inline-block px-2 py-1 text-xs rounded ${badgeClass}`}>
+          {status}
+        </span>
+      </div>
+    );
+  };
+
   // If this is a modal dialog
   if (isOpen) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
           <h2 className="text-xl font-semibold mb-4">Generate Audio</h2>
-          <p className="mb-6">Are you sure you want to generate audio for this episode? This will mark the scripts as approved.</p>
+          <p className="mb-6">Are you sure you want to generate audio for this episode? This will mark the scripts as approved and start the audio generation process.</p>
           
           <div className="flex justify-end space-x-3">
             <Button variant="outline" onClick={onCancel}>
@@ -192,8 +229,14 @@ export function ScriptApprovalDialog({
             {currentScriptLinks?.episode_interview_script_status && (
               <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                 <p className="text-sm text-blue-800 dark:text-blue-300">
-                  Status: {currentScriptLinks.episode_interview_script_status}
+                  Script Status: {currentScriptLinks.episode_interview_script_status}
                 </p>
+                
+                {/* Display text files status */}
+                {renderStatusBadge(currentScriptLinks.episode_text_files_status, "Text Files Status")}
+                
+                {/* Display podcast status */}
+                {renderStatusBadge(currentScriptLinks.podcast_status, "Podcast Status")}
               </div>
             )}
             
