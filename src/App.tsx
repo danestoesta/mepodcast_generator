@@ -10,6 +10,8 @@ interface ScriptLinks {
   episode_interview_script_2: string | null;
   episode_interview_script_3: string | null;
   episode_interview_script_4: string | null;
+  episode_interview_full_script: string | null;
+  episode_interview_file: string | null;
   episode_interview_script_status?: string;
 }
 
@@ -57,7 +59,7 @@ function App() {
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 md:p-8">
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  Episode Interview Scripts Generator
+                  Episode Interview Scripts and Audio Generator
                 </h2>
                 <p className="mt-2 text-gray-600 dark:text-gray-300">
                   Upload your PDF and get a professionally generated podcast script in minutes.

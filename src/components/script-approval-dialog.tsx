@@ -8,13 +8,25 @@ interface ScriptApprovalDialogProps {
     episode_interview_script_2: string | null;
     episode_interview_script_3: string | null;
     episode_interview_script_4: string | null;
+    episode_interview_full_script?: string | null;
+    episode_interview_file?: string | null;
     episode_interview_script_status?: string;
   };
   episodeName?: string;
   onApprove?: () => void;
+  isOpen?: boolean;
+  onConfirm?: () => void;
+  onCancel?: () => void;
 }
 
-export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: ScriptApprovalDialogProps) {
+export function ScriptApprovalDialog({ 
+  scriptLinks, 
+  episodeName, 
+  onApprove,
+  isOpen,
+  onConfirm,
+  onCancel
+}: ScriptApprovalDialogProps) {
   // Local state to track the latest script links
   const [currentScriptLinks, setCurrentScriptLinks] = useState(scriptLinks);
   
@@ -43,7 +55,7 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
         try {
           const { data, error } = await supabase
             .from('autoworkflow')
-            .select('episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+            .select('episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
             .eq('episode_interview_file_name', episodeName)
             .single();
           
@@ -73,6 +85,14 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
               
               if (data.episode_interview_script_4 !== null) {
                 updatedLinks.episode_interview_script_4 = data.episode_interview_script_4;
+              }
+              
+              if (data.episode_interview_full_script !== null) {
+                updatedLinks.episode_interview_full_script = data.episode_interview_full_script;
+              }
+              
+              if (data.episode_interview_file !== null) {
+                updatedLinks.episode_interview_file = data.episode_interview_file;
               }
               
               // Always update status if it exists
@@ -128,6 +148,27 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
     );
   };
 
+  // If this is a modal dialog
+  if (isOpen) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
+          <h2 className="text-xl font-semibold mb-4">Generate Audio</h2>
+          <p className="mb-6">Are you sure you want to generate audio for this episode? This will mark the scripts as approved.</p>
+          
+          <div className="flex justify-end space-x-3">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={onConfirm}>
+              Generate Audio
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -171,7 +212,7 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
           className="w-full bg-blue-500 hover:bg-blue-600 text-white" 
           onClick={onApprove}
         >
-          Approve Scripts
+          Generate Audio
         </Button>
       )}
     </div>

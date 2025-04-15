@@ -28,6 +28,7 @@ interface ScriptType {
   id: number;
   name: string;
   responseKey: string;
+  readOnly?: boolean;
 }
 
 // Define the webhook response type
@@ -37,6 +38,8 @@ interface WebhookResponseItem {
   episode_interview_script_2?: string;
   episode_interview_script_3?: string;
   episode_interview_script_4?: string;
+  episode_interview_full_script?: string;
+  episode_interview_file?: string;
   episode_interview_script_status?: string;
   [key: string]: any; // For other fields we don't explicitly need
 }
@@ -47,6 +50,8 @@ interface ScriptLinks {
   episode_interview_script_2: string | null;
   episode_interview_script_3: string | null;
   episode_interview_script_4: string | null;
+  episode_interview_full_script?: string | null;
+  episode_interview_file?: string | null;
   episode_interview_script_status?: string;
 }
 
@@ -75,7 +80,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     episode_interview_script_1: null,
     episode_interview_script_2: null,
     episode_interview_script_3: null,
-    episode_interview_script_4: null
+    episode_interview_script_4: null,
+    episode_interview_full_script: null,
+    episode_interview_file: null
   });
   
   // Store form data for retrying
@@ -139,7 +146,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     { id: 1, name: "Script #1 - 3 Key Points", responseKey: "episode_interview_script_1" },
     { id: 2, name: "Script #2 - What it Means", responseKey: "episode_interview_script_2" },
     { id: 3, name: "Script #3 - Practical Application", responseKey: "episode_interview_script_3" },
-    { id: 4, name: "Script #4 - Summary", responseKey: "episode_interview_script_4" }
+    { id: 4, name: "Script #4 - Summary", responseKey: "episode_interview_script_4" },
+    { id: 5, name: "Episode Interview Full Script", responseKey: "episode_interview_full_script", readOnly: true },
+    { id: 6, name: "Episode Interview File", responseKey: "episode_interview_file", readOnly: true }
   ];
 
   // Check if Script #4 has a valid link
@@ -159,7 +168,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         episode_interview_script_1: selectedScriptLinks.episode_interview_script_1,
         episode_interview_script_2: selectedScriptLinks.episode_interview_script_2,
         episode_interview_script_3: selectedScriptLinks.episode_interview_script_3,
-        episode_interview_script_4: selectedScriptLinks.episode_interview_script_4
+        episode_interview_script_4: selectedScriptLinks.episode_interview_script_4,
+        episode_interview_full_script: selectedScriptLinks.episode_interview_full_script || null,
+        episode_interview_file: selectedScriptLinks.episode_interview_file || null
       });
       
       // Update script status if available
@@ -188,7 +199,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         episode_interview_script_1: null,
         episode_interview_script_2: null,
         episode_interview_script_3: null,
-        episode_interview_script_4: null
+        episode_interview_script_4: null,
+        episode_interview_full_script: null,
+        episode_interview_file: null
       });
       
       // Reset script status
@@ -337,7 +350,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       // Query the database for records with the current episode name
       const { data, error } = await supabase
         .from('autoworkflow')
-        .select('id, created_at, episode_interview_file_name, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .select('id, created_at, episode_interview_file_name, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
         .eq('episode_interview_file_name', currentEpisodeName.current);
       
       if (error) {
@@ -373,7 +386,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
           episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
           episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
-          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null,
+          episode_interview_full_script: mostRecentRecord.episode_interview_full_script || null,
+          episode_interview_file: mostRecentRecord.episode_interview_file || null
         });
         
         // Set script generated flag if any script exists
@@ -457,7 +472,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               episode_interview_script_1: newRecord.episode_interview_script_1 || null,
               episode_interview_script_2: newRecord.episode_interview_script_2 || null,
               episode_interview_script_3: newRecord.episode_interview_script_3 || null,
-              episode_interview_script_4: newRecord.episode_interview_script_4 || null
+              episode_interview_script_4: newRecord.episode_interview_script_4 || null,
+              episode_interview_full_script: newRecord.episode_interview_full_script || null,
+              episode_interview_file: newRecord.episode_interview_file || null
             });
             
             // Set script generated flag if any script exists
@@ -535,7 +552,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               episode_interview_script_1: updatedRecord.episode_interview_script_1 || null,
               episode_interview_script_2: updatedRecord.episode_interview_script_2 || null,
               episode_interview_script_3: updatedRecord.episode_interview_script_3 || null,
-              episode_interview_script_4: updatedRecord.episode_interview_script_4 || null
+              episode_interview_script_4: updatedRecord.episode_interview_script_4 || null,
+              episode_interview_full_script: updatedRecord.episode_interview_full_script || null,
+              episode_interview_file: updatedRecord.episode_interview_file || null
             });
             
             // Set script generated flag if any script exists
@@ -625,7 +644,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             episode_interview_script_1: item.episode_interview_script_1 || null,
             episode_interview_script_2: item.episode_interview_script_2 || null,
             episode_interview_script_3: item.episode_interview_script_3 || null,
-            episode_interview_script_4: item.episode_interview_script_4 || null
+            episode_interview_script_4: item.episode_interview_script_4 || null,
+            episode_interview_full_script: item.episode_interview_full_script || null,
+            episode_interview_file: item.episode_interview_file || null
           });
           
           // Set script generated flag if any script exists
@@ -693,7 +714,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       episode_interview_script_1: null,
       episode_interview_script_2: null,
       episode_interview_script_3: null,
-      episode_interview_script_4: null
+      episode_interview_script_4: null,
+      episode_interview_full_script: null,
+      episode_interview_file: null
     });
     setIsScriptGenerated(false);
     
@@ -764,7 +787,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     try {
       const { data: existingData, error: existingError } = await supabase
         .from('autoworkflow')
-        .select('id, created_at, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .select('id, created_at, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
         .eq('episode_interview_file_name', data.episodeName);
       
       if (existingError) {
@@ -795,7 +818,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
           episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
           episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
-          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null,
+          episode_interview_full_script: mostRecentRecord.episode_interview_full_script || null,
+          episode_interview_file: mostRecentRecord.episode_interview_file || null
         });
         
         // Stop the loading state
@@ -975,7 +1000,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     try {
       const { data, error } = await supabase
         .from('autoworkflow')
-        .select('id, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .select('id, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_full_script, episode_interview_file, episode_interview_script_status')
         .eq('episode_interview_file_name', currentEpisodeName.current);
       
       if (error) {
@@ -997,7 +1022,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
           episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
           episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
-          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null,
+          episode_interview_full_script: mostRecentRecord.episode_interview_full_script || null,
+          episode_interview_file: mostRecentRecord.episode_interview_file || null
         });
         
         // Update script status if available
@@ -1137,7 +1164,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
 
       <div className="mt-8 space-y-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scripts</h3>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scripts and Audio</h3>
           <div className="flex items-center space-x-2">
             {/* Refresh button */}
             <Button
@@ -1194,11 +1221,11 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
                       rel="noopener noreferrer"
                       className="text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
                     >
-                      View
+                      {script.readOnly ? "View (Read Only)" : "View or Update"}
                     </a>
                   ) : (
                     <span className="text-sm font-medium text-gray-400 dark:text-gray-500 cursor-not-allowed">
-                      View
+                      {script.readOnly ? "View (Read Only)" : "View or Update"}
                     </span>
                   )}
                 </div>
@@ -1215,10 +1242,10 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           title={!hasScript4 ? "Script #4 - Summary is required for approval" : ""}
         >
           {scriptStatus === "Approved" 
-            ? "Scripts Approved" 
+            ? "Audio Generated" 
             : !hasScript4 && isScriptGenerated
-              ? "Script #4 Required for Approval"
-              : "Approve Scripts"}
+              ? "Script #4 Required for Audio Generation"
+              : "Generate Audio"}
         </Button>
       </div>
 

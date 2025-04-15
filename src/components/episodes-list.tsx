@@ -18,6 +18,8 @@ interface ScriptLinks {
   episode_interview_script_2: string | null;
   episode_interview_script_3: string | null;
   episode_interview_script_4: string | null;
+  episode_interview_full_script: string | null;
+  episode_interview_file: string | null;
   episode_interview_script_status?: string;
 }
 
@@ -311,6 +313,8 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
             episode_interview_script_2: null,
             episode_interview_script_3: null,
             episode_interview_script_4: null,
+            episode_interview_full_script: null,
+            episode_interview_file: null,
             episode_interview_script_status: undefined
           }, undefined);
         }
@@ -356,6 +360,8 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_2: null,
           episode_interview_script_3: null,
           episode_interview_script_4: null,
+          episode_interview_full_script: null,
+          episode_interview_file: null,
           episode_interview_script_status: undefined
         }, undefined);
       }
@@ -369,6 +375,8 @@ export function EpisodesList({ onRecordSelect }: EpisodesListProps) {
           episode_interview_script_2: record.episode_interview_script_2 || null,
           episode_interview_script_3: record.episode_interview_script_3 || null,
           episode_interview_script_4: record.episode_interview_script_4 || null,
+          episode_interview_full_script: record.episode_interview_full_script || null,
+          episode_interview_file: record.episode_interview_file || null,
           episode_interview_script_status: record.episode_interview_script_status
         }, record.episode_interview_file_name);
       }
