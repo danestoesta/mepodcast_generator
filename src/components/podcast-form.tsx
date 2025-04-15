@@ -136,6 +136,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   // Check if Script #4 has a valid link
   const hasScript4 = isValidScriptLink(scriptLinks.episode_interview_script_4);
 
+  // Check if an episode is selected
+  const isEpisodeSelected = selectedEpisodeName !== null && selectedEpisodeName !== undefined && selectedEpisodeName.trim() !== '';
+
   // Update form when selectedScriptLinks changes
   useEffect(() => {
     if (selectedScriptLinks) {
@@ -858,6 +861,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             id="episodeName"
             placeholder="Enter episode name"
             {...register("episodeName")}
+            disabled={isEpisodeSelected}
           />
           {errors.episodeName && (
             <p className="text-sm text-red-500">{errors.episodeName.message}</p>
@@ -869,14 +873,30 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           <div className="flex items-center justify-center w-full">
             <label
               htmlFor="pdfFile"
-              className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-700 hover:bg-gray-100 border-gray-300 dark:border-gray-600"
+              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg ${
+                isEpisodeSelected 
+                  ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700' 
+                  : 'cursor-pointer bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-700 hover:bg-gray-100 border-gray-300 dark:border-gray-600'
+              }`}
             >
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <Upload className="w-8 h-8 mb-3 text-gray-500 dark:text-gray-400" />
-                <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                <Upload className={`w-8 h-8 mb-3 ${
+                  isEpisodeSelected 
+                    ? 'text-gray-400 dark:text-gray-500' 
+                    : 'text-gray-500 dark:text-gray-400'
+                }`} />
+                <p className={`mb-2 text-sm ${
+                  isEpisodeSelected 
+                    ? 'text-gray-400 dark:text-gray-500' 
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
                   <span className="font-semibold">Click to upload</span> or drag and drop
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className={`text-xs ${
+                  isEpisodeSelected 
+                    ? 'text-gray-400 dark:text-gray-500' 
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
                   PDF files only
                 </p>
                 {selectedFile && (
@@ -891,6 +911,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
                 accept=".pdf"
                 className="hidden"
                 onChange={handleFileChange}
+                disabled={isEpisodeSelected}
               />
             </label>
           </div>
@@ -902,7 +923,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         <Button
           type="submit"
           className="w-full"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isEpisodeSelected}
         >
           {isSubmitting ? (
             <>
