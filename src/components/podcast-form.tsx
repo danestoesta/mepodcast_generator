@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Upload, CheckCircle, AlertCircle, FileText, Loader2 } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, FileText, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,6 +67,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   const [isScriptGenerated, setIsScriptGenerated] = useState(false);
   const [scriptStatus, setScriptStatus] = useState<"Pending" | "Approved">("Pending");
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
+  
   // Initialize with null values instead of empty strings to properly indicate absence of links
   const [scriptLinks, setScriptLinks] = useState<Record<string, string | null>>({
     episode_interview_script_1: null,
@@ -112,6 +115,12 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
   // Flag to track if we're checking for existing records
   const isCheckingExistingRecords = useRef<boolean>(false);
   
+  // Reference to the file input element
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  
+  // Flag to track if we need to clear the PDF file
+  const shouldClearPdfFile = useRef<boolean>(false);
+  
   const {
     register,
     handleSubmit,
@@ -135,6 +144,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
 
   // Check if Script #4 has a valid link
   const hasScript4 = isValidScriptLink(scriptLinks.episode_interview_script_4);
+
+  // Check if Script #1 has a valid link
+  const hasScript1 = isValidScriptLink(scriptLinks.episode_interview_script_1);
 
   // Check if an episode is selected
   const isEpisodeSelected = selectedEpisodeName !== null && selectedEpisodeName !== undefined && selectedEpisodeName.trim() !== '';
@@ -224,6 +236,12 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       
       // Reset the isCheckingExistingRecords flag
       isCheckingExistingRecords.current = false;
+      
+      // If we should clear the PDF file, do it now
+      if (shouldClearPdfFile.current) {
+        clearPdfFile();
+        shouldClearPdfFile.current = false;
+      }
     }
     
     // Cleanup on unmount
@@ -257,6 +275,54 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
       window.removeEventListener('episodes-list-refresh', handleEpisodesListRefresh);
     };
   }, [isSubmitting]);
+
+  // Function to clear the PDF file
+  const clearPdfFile = () => {
+    console.log("Clearing PDF file");
+    
+    // Clear the selected file state
+    setSelectedFile(null);
+    
+    // Reset the file input value using the ref
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    
+    // Also try to reset using getElementById as a fallback
+    const fileInput = document.getElementById('pdfFile') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
+  // Effect to clear the selected file when submission completes
+  useEffect(() => {
+    // When isSubmitting changes from true to false and we have found a matching record,
+    // clear the selected file
+    if (!isSubmitting && foundMatchingRecord.current) {
+      console.log("Submission completed, clearing PDF file");
+      clearPdfFile();
+    }
+  }, [isSubmitting]);
+
+  // Update processing status when script links change
+  useEffect(() => {
+    if (isSubmitting || hasScript1) {
+      if (hasScript1 && !hasScript4) {
+        setProcessingStatus("Script #1 has been generated, kindly wait for the other scripts to load");
+      } else if (hasScript4) {
+        setProcessingStatus(null); // Clear the status when all scripts are loaded
+        
+        // IMPORTANT: Make sure to stop the loading state when Script #4 is available
+        if (isSubmitting) {
+          setIsSubmitting(false);
+          shouldClearPdfFile.current = true;
+        }
+      }
+    } else {
+      setProcessingStatus(null);
+    }
+  }, [scriptLinks, isSubmitting, hasScript1, hasScript4]);
 
   // Function to check if a new row has been created for the current episode
   const checkForNewRow = async () => {
@@ -323,27 +389,37 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
         }
         
-        // Stop the loading state when a new row is created
-        setIsSubmitting(false);
+        // Check if Script #1 is available but not Script #4
+        const hasScript1 = !!mostRecentRecord.episode_interview_script_1;
+        const hasScript4 = !!mostRecentRecord.episode_interview_script_4;
         
-        // Clear the script4 check interval
-        if (script4CheckIntervalRef.current !== null) {
-          window.clearInterval(script4CheckIntervalRef.current);
-          script4CheckIntervalRef.current = null;
+        if (hasScript1 && !hasScript4) {
+          // Keep the loading state active but update the processing status
+          setProcessingStatus("Script #1 has been generated, kindly wait for the other scripts to load");
+        } else if (hasScript4) {
+          // Stop the loading state when all scripts are available
+          setIsSubmitting(false);
+          shouldClearPdfFile.current = true;
+          
+          // Clear the script4 check interval
+          if (script4CheckIntervalRef.current !== null) {
+            window.clearInterval(script4CheckIntervalRef.current);
+            script4CheckIntervalRef.current = null;
+          }
+          
+          // Clear the max wait timeout
+          if (maxWaitTimeoutRef.current !== null) {
+            window.clearTimeout(maxWaitTimeoutRef.current);
+            maxWaitTimeoutRef.current = null;
+          }
+          
+          // Show notification
+          toast({
+            title: "Success!",
+            description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+            variant: "default",
+          });
         }
-        
-        // Clear the max wait timeout
-        if (maxWaitTimeoutRef.current !== null) {
-          window.clearTimeout(maxWaitTimeoutRef.current);
-          maxWaitTimeoutRef.current = null;
-        }
-        
-        // Show notification
-        toast({
-          title: "Success!",
-          description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
-          variant: "default",
-        });
       }
     } catch (err) {
       console.error('Error in checkForNewRow:', err);
@@ -397,27 +473,37 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               setScriptStatus(newRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
             }
             
-            // Stop the loading state when a new row is created
-            setIsSubmitting(false);
+            // Check if Script #1 is available but not Script #4
+            const hasScript1 = !!newRecord.episode_interview_script_1;
+            const hasScript4 = !!newRecord.episode_interview_script_4;
             
-            // Clear the script4 check interval
-            if (script4CheckIntervalRef.current !== null) {
-              window.clearInterval(script4CheckIntervalRef.current);
-              script4CheckIntervalRef.current = null;
+            if (hasScript1 && !hasScript4) {
+              // Keep the loading state active but update the processing status
+              setProcessingStatus("Script #1 has been generated, kindly wait for the other scripts to load");
+            } else if (hasScript4) {
+              // Stop the loading state when all scripts are available
+              setIsSubmitting(false);
+              shouldClearPdfFile.current = true;
+              
+              // Clear the script4 check interval
+              if (script4CheckIntervalRef.current !== null) {
+                window.clearInterval(script4CheckIntervalRef.current);
+                script4CheckIntervalRef.current = null;
+              }
+              
+              // Clear the max wait timeout
+              if (maxWaitTimeoutRef.current !== null) {
+                window.clearTimeout(maxWaitTimeoutRef.current);
+                maxWaitTimeoutRef.current = null;
+              }
+              
+              // Show notification
+              toast({
+                title: "Success!",
+                description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+                variant: "default",
+              });
             }
-            
-            // Clear the max wait timeout
-            if (maxWaitTimeoutRef.current !== null) {
-              window.clearTimeout(maxWaitTimeoutRef.current);
-              maxWaitTimeoutRef.current = null;
-            }
-            
-            // Show notification
-            toast({
-              title: "Success!",
-              description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
-              variant: "default",
-            });
           }
         }
       })
@@ -434,7 +520,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         console.log('Record updated in Supabase:', payload);
         
         // Only process if we're currently submitting and have an episode name
-        if (isSubmitting && currentEpisodeName.current && !foundMatchingRecord.current) {
+        if (currentEpisodeName.current) {
           const updatedRecord = payload.new as any;
           
           // Check if this is the record for our current episode
@@ -465,27 +551,37 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
               setScriptStatus(updatedRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
             }
             
-            // Stop the loading state when a record is updated
-            setIsSubmitting(false);
+            // Check if Script #1 is available but not Script #4
+            const hasScript1 = !!updatedRecord.episode_interview_script_1;
+            const hasScript4 = !!updatedRecord.episode_interview_script_4;
             
-            // Clear the script4 check interval
-            if (script4CheckIntervalRef.current !== null) {
-              window.clearInterval(script4CheckIntervalRef.current);
-              script4CheckIntervalRef.current = null;
+            if (hasScript1 && !hasScript4) {
+              // Keep the loading state active but update the processing status
+              setProcessingStatus("Script #1 has been generated, kindly wait for the other scripts to load");
+            } else if (hasScript4 && isSubmitting) {
+              // Stop the loading state when all scripts are available
+              setIsSubmitting(false);
+              shouldClearPdfFile.current = true;
+              
+              // Clear the script4 check interval
+              if (script4CheckIntervalRef.current !== null) {
+                window.clearInterval(script4CheckIntervalRef.current);
+                script4CheckIntervalRef.current = null;
+              }
+              
+              // Clear the max wait timeout
+              if (maxWaitTimeoutRef.current !== null) {
+                window.clearTimeout(maxWaitTimeoutRef.current);
+                maxWaitTimeoutRef.current = null;
+              }
+              
+              // Show notification
+              toast({
+                title: "Success!",
+                description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
+                variant: "default",
+              });
             }
-            
-            // Clear the max wait timeout
-            if (maxWaitTimeoutRef.current !== null) {
-              window.clearTimeout(maxWaitTimeoutRef.current);
-              maxWaitTimeoutRef.current = null;
-            }
-            
-            // Show notification
-            toast({
-              title: "Success!",
-              description: `Scripts for "${currentEpisodeName.current}" have been generated.`,
-              variant: "default",
-            });
           }
         }
       })
@@ -545,8 +641,18 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
             setScriptStatus(item.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
           }
           
-          // Stop the loading state
-          setIsSubmitting(false);
+          // Check if Script #1 is available but not Script #4
+          const hasScript1 = !!item.episode_interview_script_1;
+          const hasScript4 = !!item.episode_interview_script_4;
+          
+          if (hasScript1 && !hasScript4) {
+            // Keep the loading state active but update the processing status
+            setProcessingStatus("Script #1 has been generated, kindly wait for the other scripts to load");
+          } else if (hasScript4) {
+            // Stop the loading state when all scripts are available
+            setIsSubmitting(false);
+            shouldClearPdfFile.current = true;
+          }
           
           return true;
         }
@@ -571,6 +677,9 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     
     // Set loading state
     setIsSubmitting(true);
+    
+    // Reset processing status
+    setProcessingStatus(null);
     
     // Show processing toast with updated message about taking a few minutes
     toast({
@@ -634,6 +743,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         
         // Stop the loading state
         setIsSubmitting(false);
+        shouldClearPdfFile.current = true;
         
         // Clear the script4 check interval
         if (script4CheckIntervalRef.current !== null) {
@@ -690,6 +800,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         
         // Stop the loading state
         setIsSubmitting(false);
+        shouldClearPdfFile.current = true;
         
         // Clear the script4 check interval
         if (script4CheckIntervalRef.current !== null) {
@@ -855,6 +966,66 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
     setIsApprovalDialogOpen(false);
   };
 
+  // Function to refresh script links
+  const refreshScriptLinks = async () => {
+    if (!currentEpisodeName.current) return;
+    
+    setIsRefreshing(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('autoworkflow')
+        .select('id, episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+        .eq('episode_interview_file_name', currentEpisodeName.current);
+      
+      if (error) {
+        console.error('Error refreshing script links:', error);
+        toast({
+          title: "Refresh Error",
+          description: "Failed to refresh script links.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        // Sort by created_at to get the most recent record (if multiple exist)
+        const mostRecentRecord = data[0];
+        
+        // Update script links
+        setScriptLinks({
+          episode_interview_script_1: mostRecentRecord.episode_interview_script_1 || null,
+          episode_interview_script_2: mostRecentRecord.episode_interview_script_2 || null,
+          episode_interview_script_3: mostRecentRecord.episode_interview_script_3 || null,
+          episode_interview_script_4: mostRecentRecord.episode_interview_script_4 || null
+        });
+        
+        // Update script status if available
+        if (mostRecentRecord.episode_interview_script_status) {
+          setScriptStatus(mostRecentRecord.episode_interview_script_status === "Approved" ? "Approved" : "Pending");
+        }
+        
+        // Set script generated flag if any script exists
+        const hasAnyScript = mostRecentRecord.episode_interview_script_1 || 
+                            mostRecentRecord.episode_interview_script_2 || 
+                            mostRecentRecord.episode_interview_script_3 || 
+                            mostRecentRecord.episode_interview_script_4;
+        
+        setIsScriptGenerated(!!hasAnyScript);
+        
+        toast({
+          title: "Scripts Refreshed",
+          description: "Script links have been refreshed.",
+          variant: "default",
+        });
+      }
+    } catch (err) {
+      console.error('Error in refreshScriptLinks:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Check if we have a valid selected episode
   const hasValidSelectedEpisode = selectedEpisodeName && selectedEpisodeName.trim() !== '';
 
@@ -868,6 +1039,15 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
           </h3>
           <p className="mt-1 text-sm text-blue-600 dark:text-blue-400">
             You can view the scripts below or create a new episode using the form.
+          </p>
+        </div>
+      )}
+
+      {/* Show processing status banner when applicable */}
+      {processingStatus && (
+        <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+            {processingStatus}
           </p>
         </div>
       )}
@@ -930,6 +1110,7 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
                 className="hidden"
                 onChange={handleFileChange}
                 disabled={isEpisodeSelected}
+                ref={fileInputRef}
               />
             </label>
           </div>
@@ -958,6 +1139,23 @@ export function PodcastForm({ selectedScriptLinks, selectedEpisodeName }: Podcas
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scripts</h3>
           <div className="flex items-center space-x-2">
+            {/* Refresh button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshScriptLinks}
+              disabled={isRefreshing || !currentEpisodeName.current}
+              title="Refresh script links"
+              className="mr-2"
+            >
+              {isRefreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="ml-1">Refresh</span>
+            </Button>
+            
             <div className="flex items-center">
               <span className="text-sm font-medium mr-2">Script Status:</span>
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

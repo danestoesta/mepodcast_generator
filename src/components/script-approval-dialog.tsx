@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase';
 
 interface ScriptApprovalDialogProps {
   scriptLinks: {
@@ -14,6 +15,9 @@ interface ScriptApprovalDialogProps {
 }
 
 export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: ScriptApprovalDialogProps) {
+  // Local state to track the latest script links
+  const [currentScriptLinks, setCurrentScriptLinks] = useState(scriptLinks);
+  
   // Set up automatic refresh every second
   useEffect(() => {
     // Function to trigger refresh event
@@ -30,6 +34,83 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
       clearInterval(refreshInterval);
     };
   }, []);
+
+  // Effect to update script links when props change or when actively monitoring a file
+  useEffect(() => {
+    // If we have an episode name, set up real-time monitoring for this specific episode
+    if (episodeName) {
+      const fetchLatestScriptLinks = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('autoworkflow')
+            .select('episode_interview_script_1, episode_interview_script_2, episode_interview_script_3, episode_interview_script_4, episode_interview_script_status')
+            .eq('episode_interview_file_name', episodeName)
+            .single();
+          
+          if (error) {
+            console.error('Error fetching latest script links:', error);
+            return;
+          }
+          
+          if (data) {
+            // Only update if there's actual data to update with
+            setCurrentScriptLinks(prevLinks => {
+              // Create a new object with updated values
+              const updatedLinks = { ...prevLinks };
+              
+              // Update each script link only if it exists in the data
+              if (data.episode_interview_script_1 !== null) {
+                updatedLinks.episode_interview_script_1 = data.episode_interview_script_1;
+              }
+              
+              if (data.episode_interview_script_2 !== null) {
+                updatedLinks.episode_interview_script_2 = data.episode_interview_script_2;
+              }
+              
+              if (data.episode_interview_script_3 !== null) {
+                updatedLinks.episode_interview_script_3 = data.episode_interview_script_3;
+              }
+              
+              if (data.episode_interview_script_4 !== null) {
+                updatedLinks.episode_interview_script_4 = data.episode_interview_script_4;
+              }
+              
+              // Always update status if it exists
+              if (data.episode_interview_script_status) {
+                updatedLinks.episode_interview_script_status = data.episode_interview_script_status;
+              }
+              
+              return updatedLinks;
+            });
+          }
+        } catch (err) {
+          console.error('Error in script links refresh:', err);
+        }
+      };
+      
+      // Initial fetch
+      fetchLatestScriptLinks();
+      
+      // Set up interval to check for updates more frequently (every 500ms)
+      const scriptUpdateInterval = setInterval(fetchLatestScriptLinks, 500);
+      
+      // Clean up
+      return () => {
+        clearInterval(scriptUpdateInterval);
+      };
+    } else {
+      // If no episode is selected, just use the props
+      setCurrentScriptLinks(scriptLinks);
+    }
+  }, [episodeName]);
+
+  // Update local state when props change (initial selection)
+  useEffect(() => {
+    // Only update from props when episode changes or on initial load
+    if (!episodeName || Object.values(currentScriptLinks).every(val => val === null)) {
+      setCurrentScriptLinks(scriptLinks);
+    }
+  }, [scriptLinks, episodeName]);
 
   // Helper function to render script links
   const renderScriptLink = (url: string | null, index: number) => {
@@ -53,15 +134,13 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
         <h2 className="text-xl font-semibold">
           {episodeName ? `Scripts for: ${episodeName}` : ''}
         </h2>
-        {/* This is a placeholder for the h3 heading that's in the parent component */}
-        {/* <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scripts</h3> */}
       </div>
       
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-        {!scriptLinks?.episode_interview_script_1 && 
-         !scriptLinks?.episode_interview_script_2 && 
-         !scriptLinks?.episode_interview_script_3 && 
-         !scriptLinks?.episode_interview_script_4 ? (
+        {!currentScriptLinks?.episode_interview_script_1 && 
+         !currentScriptLinks?.episode_interview_script_2 && 
+         !currentScriptLinks?.episode_interview_script_3 && 
+         !currentScriptLinks?.episode_interview_script_4 ? (
           <div className="text-center py-4">
             <p className="text-gray-500 dark:text-gray-400">
               
@@ -69,19 +148,19 @@ export function ScriptApprovalDialog({ scriptLinks, episodeName, onApprove }: Sc
           </div>
         ) : (
           <div className="space-y-3">
-            {scriptLinks?.episode_interview_script_status && (
+            {currentScriptLinks?.episode_interview_script_status && (
               <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                 <p className="text-sm text-blue-800 dark:text-blue-300">
-                  Status: {scriptLinks.episode_interview_script_status}
+                  Status: {currentScriptLinks.episode_interview_script_status}
                 </p>
               </div>
             )}
             
             <div className="space-y-2">
-              {renderScriptLink(scriptLinks?.episode_interview_script_1, 1)}
-              {renderScriptLink(scriptLinks?.episode_interview_script_2, 2)}
-              {renderScriptLink(scriptLinks?.episode_interview_script_3, 3)}
-              {renderScriptLink(scriptLinks?.episode_interview_script_4, 4)}
+              {renderScriptLink(currentScriptLinks?.episode_interview_script_1, 1)}
+              {renderScriptLink(currentScriptLinks?.episode_interview_script_2, 2)}
+              {renderScriptLink(currentScriptLinks?.episode_interview_script_3, 3)}
+              {renderScriptLink(currentScriptLinks?.episode_interview_script_4, 4)}
             </div>
           </div>
         )}

@@ -35,12 +35,12 @@ interface SortState {
   direction: SortDirection;
 }
 
-// Predefined column order
+// Predefined column order - moved created_at to the first position
 const PREDEFINED_COLUMN_ORDER = [
+  'created_at',
   'episode_interview_file_name',
   'episode_interview_file',
   'id',
-  'created_at',
   'episode_number',
   'source_document_file_name',
   'source_document',

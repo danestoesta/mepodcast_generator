@@ -81,7 +81,9 @@ const startProgressAnimation = (toastId: string) => {
 
   let progress = 0;
   const interval = setInterval(() => {
-    progress += 2; // Increment by 2% every 60ms to complete in ~3 seconds
+    // Adjust increment to complete in 3 seconds (3000ms)
+    // 100% / (3000ms / 60ms) = 2% per 60ms
+    progress += 2; 
     
     if (progress >= 100) {
       clearInterval(interval);
